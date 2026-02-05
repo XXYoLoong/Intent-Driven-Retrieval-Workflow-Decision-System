@@ -70,7 +70,7 @@ class DocProcessor:
                 "content_hash": content_hash,
                 "content_text": chunk["text"],
                 "chunk_index": i,
-                "metadata": {
+                "chunk_metadata": {
                     "start_pos": chunk.get("start_pos", 0),
                     "end_pos": chunk.get("end_pos", len(chunk["text"]))
                 }

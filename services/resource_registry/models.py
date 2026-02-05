@@ -96,7 +96,7 @@ class ResourceDocChunk(Base):
     content_hash = Column(String(64), nullable=True)
     content_text = Column(Text, nullable=True)
     chunk_index = Column(Integer, nullable=False, default=0)
-    metadata = Column(JSON, nullable=True)  # {start_pos, end_pos, page_num, etc}
+    chunk_metadata = Column(JSON, nullable=True)  # {start_pos, end_pos, page_num, etc}，避免与 Declarative 保留名 metadata 冲突
     embedding_id = Column(String(64), nullable=True)  # 向量库中的ID
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
