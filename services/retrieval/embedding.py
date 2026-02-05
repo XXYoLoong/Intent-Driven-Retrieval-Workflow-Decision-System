@@ -14,7 +14,7 @@
 
 """
 嵌入向量生成服务
-支持 OpenAI、Qianwen（通义），优先使用 .env 中配置的密钥。
+支持 OpenAI、DeepSeek、Qianwen（通义），优先使用 .env 中配置的密钥。
 """
 from typing import List, Optional
 from openai import OpenAI
@@ -28,12 +28,13 @@ from config.llm_config import (
 # 各提供商嵌入维度（用于 ChromaDB 等）
 EMBEDDING_DIMENSIONS = {
     "openai": {"text-embedding-3-small": 1536, "text-embedding-3-large": 3072, "text-embedding-ada-002": 1536},
+    "deepseek": {"deepseek-embedding": 1536, "deepseek-embedding-v2": 768},
     "qianwen": {"text-embedding-v3": 1536, "text-embedding-v2": 1536},
 }
 
 
 class EmbeddingService:
-    """嵌入向量服务（OpenAI / Qianwen）"""
+    """嵌入向量服务（OpenAI / DeepSeek / Qianwen）"""
 
     def __init__(
         self,

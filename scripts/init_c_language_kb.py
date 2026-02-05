@@ -18,9 +18,12 @@
 import sys
 from pathlib import Path
 
-# 添加项目根目录到路径
+# 添加项目根目录到路径并加载 .env（必须在读取 config 前执行）
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+from dotenv import load_dotenv
+load_dotenv(project_root / ".env")
 
 from services.resource_registry.service import ResourceService, WorkflowService
 from services.resource_registry.doc_processor import DocProcessor

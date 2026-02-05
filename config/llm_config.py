@@ -104,12 +104,14 @@ def get_llm_model(provider: Optional[str] = None, role: str = "chat") -> str:
 
 
 def get_embedding_provider() -> str:
-    """嵌入模型提供商：openai | qianwen，优先 .env 中 EMBEDDING_PROVIDER。"""
+    """嵌入模型提供商：openai | deepseek | qianwen，优先 .env 中 EMBEDDING_PROVIDER。"""
     p = (os.getenv("EMBEDDING_PROVIDER") or "").strip().lower()
-    if p in ("openai", "qianwen"):
+    if p in ("openai", "deepseek", "qianwen"):
         return p
     if os.getenv(ENV_DASHSCOPE_API_KEY):
         return "qianwen"
+    if os.getenv(ENV_DEEPSEEK_API_KEY) or (os.getenv(ENV_LLM_PROVIDER) or "").strip().lower() == "deepseek":
+        return "deepseek"
     return "openai"
 
 
@@ -120,6 +122,10 @@ def get_embedding_api_key_and_base() -> Tuple[str, str]:
         key = os.getenv(ENV_DASHSCOPE_API_KEY) or ""
         base = os.getenv(ENV_DASHSCOPE_BASE_URL) or "https://dashscope.aliyuncs.com/compatible-mode/v1"
         return key, base
+    if provider == "deepseek":
+        key = os.getenv(ENV_DEEPSEEK_API_KEY) or ""
+        base = DEFAULT_BASE_URLS["deepseek"]
+        return key, base
     key = os.getenv(ENV_OPENAI_API_KEY) or ""
     base = os.getenv(ENV_OPENAI_BASE_URL) or DEFAULT_BASE_URLS["openai"]
     return key, base
@@ -127,7 +133,9 @@ def get_embedding_api_key_and_base() -> Tuple[str, str]:
 
 def get_embedding_model() -> str:
     """嵌入模型名。可通过 EMBEDDING_MODEL 覆盖。"""
-    default = {"openai": "text-embedding-3-small", "qianwen": "text-embedding-v3"}.get(
-        get_embedding_provider(), "text-embedding-3-small"
-    )
+    default = {
+        "openai": "text-embedding-3-small",
+        "deepseek": "deepseek-embedding",
+        "qianwen": "text-embedding-v3",
+    }.get(get_embedding_provider(), "text-embedding-3-small")
     return os.getenv("EMBEDDING_MODEL") or default

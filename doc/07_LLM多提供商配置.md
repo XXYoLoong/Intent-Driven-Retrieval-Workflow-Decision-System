@@ -67,20 +67,22 @@ DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ## 三、嵌入模型（Embedding）
 
-仅 **OpenAI** 与 **Qianwen** 支持嵌入接口，用于文档向量化与检索。
+**OpenAI、DeepSeek、Qianwen** 支持嵌入接口，用于文档向量化与检索。
 
 **配置**:
 ```env
-# 可选：openai | qianwen，不设则：有 DASHSCOPE_API_KEY 用 qianwen，否则 openai
+# 可选：openai | deepseek | qianwen。不设则：LLM_PROVIDER=deepseek 或已配置 DEEPSEEK_API_KEY 用 deepseek，有 DASHSCOPE_API_KEY 用 qianwen，否则 openai
 EMBEDDING_PROVIDER=openai
 
 # 可选：模型名
 # OpenAI: text-embedding-3-small, text-embedding-3-large
+# DeepSeek: deepseek-embedding, deepseek-embedding-v2
 # Qianwen: text-embedding-v3
 EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 **组合示例**:
+- 全用 DeepSeek（Chat + 嵌入）：设置 `LLM_PROVIDER=deepseek`、`DEEPSEEK_API_KEY`，嵌入会默认用 `deepseek`（无需再设 `EMBEDDING_PROVIDER`）。
 - Chat 用 Claude、Embedding 用 OpenAI：设置 `LLM_PROVIDER=claude`、`OPENAI_API_KEY`、`EMBEDDING_PROVIDER=openai`。
 - 全用 Qianwen：设置 `LLM_PROVIDER=qianwen`、`DASHSCOPE_API_KEY`，嵌入会默认用 `qianwen`（或显式 `EMBEDDING_PROVIDER=qianwen`）。
 
@@ -137,7 +139,7 @@ OPENAI_API_KEY=sk-your-openai-api-key
 # LLM_DECIDER_MODEL=
 # LLM_ANSWERER_MODEL=
 
-# ---------- 嵌入（可选，仅 openai / qianwen） ----------
+# ---------- 嵌入（可选：openai / deepseek / qianwen） ----------
 # EMBEDDING_PROVIDER=openai
 # EMBEDDING_MODEL=text-embedding-3-small
 ```
