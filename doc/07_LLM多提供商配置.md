@@ -61,28 +61,28 @@ DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # 新加坡: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 # DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 
-# 可选：模型（如 qwen-plus, qwen-turbo, qwen-max）
+# 可选：模型（如 qwen-plus, qwen-turbo, qwen-max, qwen3-omni-flash）
+# qwen3-omni-flash 为 Qwen-Omni 多模态模型，仅支持流式；本系统内部已做流式聚合，可直接使用
 # LLM_MODEL=qwen-plus
 ```
 
 ## 三、嵌入模型（Embedding）
 
-**OpenAI、DeepSeek、Qianwen** 支持嵌入接口，用于文档向量化与检索。
+仅 **OpenAI** 与 **Qianwen** 支持嵌入接口，用于文档向量化与检索。**DeepSeek 官方 API 暂无 embeddings 端点**，使用 DeepSeek 做 LLM 时需单独配置嵌入（见下方组合示例）。
 
 **配置**:
 ```env
-# 可选：openai | deepseek | qianwen。不设则：LLM_PROVIDER=deepseek 或已配置 DEEPSEEK_API_KEY 用 deepseek，有 DASHSCOPE_API_KEY 用 qianwen，否则 openai
+# 可选：openai | qianwen。不设则：有 DASHSCOPE_API_KEY 用 qianwen，否则 openai
 EMBEDDING_PROVIDER=openai
 
 # 可选：模型名
 # OpenAI: text-embedding-3-small, text-embedding-3-large
-# DeepSeek: deepseek-embedding, deepseek-embedding-v2
 # Qianwen: text-embedding-v3
 EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 **组合示例**:
-- 全用 DeepSeek（Chat + 嵌入）：设置 `LLM_PROVIDER=deepseek`、`DEEPSEEK_API_KEY`，嵌入会默认用 `deepseek`（无需再设 `EMBEDDING_PROVIDER`）。
+- **LLM 用 DeepSeek、嵌入用 OpenAI**：设置 `LLM_PROVIDER=deepseek`、`DEEPSEEK_API_KEY`、`EMBEDDING_PROVIDER=openai`、`OPENAI_API_KEY`（初始化知识库等会调用嵌入接口，必须配置嵌入用 Key）。
 - Chat 用 Claude、Embedding 用 OpenAI：设置 `LLM_PROVIDER=claude`、`OPENAI_API_KEY`、`EMBEDDING_PROVIDER=openai`。
 - 全用 Qianwen：设置 `LLM_PROVIDER=qianwen`、`DASHSCOPE_API_KEY`，嵌入会默认用 `qianwen`（或显式 `EMBEDDING_PROVIDER=qianwen`）。
 
@@ -105,7 +105,9 @@ LLM_ANSWERER_MODEL=gpt-4-turbo-preview
 | OpenAI   | gpt-4-turbo-preview |
 | DeepSeek | deepseek-chat |
 | Claude   | claude-3-5-sonnet-20241022 |
-| Qianwen  | qwen-plus |
+| Qianwen  | qwen-plus（可选 qwen3-omni-flash 多模态） |
+
+**Qwen-Omni（qwen3-omni-flash）说明**：该模型为多模态（文本/图/音/视频输入，可输出文本或语音），仅支持流式调用（`stream=True`）。本系统在 Router/Decider/Answerer 等非流式调用处已做适配：内部以流式请求并聚合成单次响应，无需额外配置。若需语音输出等能力，可在自建流式接口中传入 `modalities=["text","audio"]` 与 `audio` 参数（参见阿里云百炼文档）。
 
 ## 六、.env 中与 LLM 相关的完整示例（含注释）
 
@@ -139,7 +141,7 @@ OPENAI_API_KEY=sk-your-openai-api-key
 # LLM_DECIDER_MODEL=
 # LLM_ANSWERER_MODEL=
 
-# ---------- 嵌入（可选：openai / deepseek / qianwen） ----------
+# ---------- 嵌入（可选：openai / qianwen，DeepSeek 无嵌入端点） ----------
 # EMBEDDING_PROVIDER=openai
 # EMBEDDING_MODEL=text-embedding-3-small
 ```
@@ -156,4 +158,4 @@ A: 若未设置 `LLM_PROVIDER`，会因「自动推断」使用 Qianwen；嵌入
 A: 支持。内部会在 system 中追加「只输出合法 JSON」的说明，效果与 OpenAI 的 `response_format` 类似。
 
 **Q: 嵌入用哪家？**  
-A: 由 `EMBEDDING_PROVIDER` 决定；未设置时，有 `DASHSCOPE_API_KEY` 则用 `qianwen`，否则用 `openai`。Chat 与嵌入可分别选不同提供商。
+A: 由 `EMBEDDING_PROVIDER` 决定；未设置时，有 `DASHSCOPE_API_KEY` 则用 `qianwen`，否则用 `openai`。DeepSeek 官方 API 暂无嵌入端点，LLM 用 DeepSeek 时需单独配置 `EMBEDDING_PROVIDER=openai` 与 `OPENAI_API_KEY`（或使用 Qianwen 嵌入）。Chat 与嵌入可分别选不同提供商。

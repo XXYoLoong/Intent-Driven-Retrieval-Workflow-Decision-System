@@ -95,6 +95,10 @@ class UnifiedLLMClient:
             return self._chat_claude(messages, model, temperature, response_format, **kwargs)
         return self._chat_openai_compatible(messages, model, temperature, response_format, **kwargs)
 
+    def _is_qwen_omni_model(self, model: str) -> bool:
+        """Qwen-Omni（qwen3-omni-*）仅支持流式调用，需特殊处理。"""
+        return bool(model and str(model).strip().lower().startswith("qwen3-omni-"))
+
     def _chat_openai_compatible(
         self,
         messages: List[Dict[str, str]],
@@ -103,7 +107,11 @@ class UnifiedLLMClient:
         response_format: Optional[Dict[str, str]],
         **kwargs: Any,
     ) -> Any:
-        """OpenAI / DeepSeek / Qianwen：直接调用 OpenAI SDK。"""
+        """OpenAI / DeepSeek / Qianwen：直接调用 OpenAI SDK。Qwen-Omni 强制流式并聚合成单次响应。"""
+        if self._provider == "qianwen" and self._is_qwen_omni_model(model):
+            return self._chat_qwen_omni_non_stream(
+                messages, model, temperature, response_format, **kwargs
+            )
         params: Dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -113,12 +121,54 @@ class UnifiedLLMClient:
         if response_format is not None and self._provider in ("openai", "deepseek"):
             params["response_format"] = response_format
         elif response_format is not None and self._provider == "qianwen":
-            # 部分兼容；若无则忽略
             try:
                 params["response_format"] = response_format
             except Exception:
                 pass
         return self._openai_client.chat.completions.create(**params)
+
+    def _chat_qwen_omni_non_stream(
+        self,
+        messages: List[Dict[str, str]],
+        model: str,
+        temperature: float,
+        response_format: Optional[Dict[str, str]],
+        **kwargs: Any,
+    ) -> Any:
+        """Qwen-Omni 仅支持 stream=True，内部流式调用后聚合成与 create() 相同的返回结构。"""
+        params: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            "modalities": ["text"],
+            **{k: v for k, v in kwargs.items() if k not in ("stream", "stream_options", "modalities")},
+        }
+        if response_format is not None:
+            try:
+                params["response_format"] = response_format
+            except Exception:
+                pass
+        stream = self._openai_client.chat.completions.create(**params)
+        content_parts: List[str] = []
+        for chunk in stream:
+            if chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                if hasattr(delta, "content") and delta.content:
+                    content_parts.append(delta.content)
+        text = "".join(content_parts)
+
+        class _Choice:
+            class _Message:
+                def __init__(self, content: str):
+                    self.content = content
+            def __init__(self, content: str):
+                self.message = self._Message(content)
+        class _Response:
+            def __init__(self, content: str):
+                self.choices = [_Choice(content)]
+        return _Response(text)
 
     def _chat_claude(
         self,

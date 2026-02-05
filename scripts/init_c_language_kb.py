@@ -19,11 +19,13 @@ import sys
 from pathlib import Path
 
 # 添加项目根目录到路径并加载 .env（必须在读取 config 前执行）
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from dotenv import load_dotenv
+# 先加载项目根目录 .env，再加载当前工作目录 .env（后者可覆盖）
 load_dotenv(project_root / ".env")
+load_dotenv()
 
 from services.resource_registry.service import ResourceService, WorkflowService
 from services.resource_registry.doc_processor import DocProcessor
@@ -69,6 +71,15 @@ def init_c_language_knowledge_base():
     
     # 2. 处理文档（分块、向量化）
     print("2. 处理文档（分块、向量化）...")
+    from config.llm_config import get_embedding_provider, get_embedding_api_key_and_base
+    emb_provider = get_embedding_provider()
+    emb_key, _ = get_embedding_api_key_and_base()
+    if not (emb_key and emb_key.strip()):
+        print("  ✗ 嵌入服务未配置 API Key。文档向量化需要嵌入接口，请在项目根目录或当前目录的 .env 中配置：")
+        print("     - 使用 OpenAI 嵌入：EMBEDDING_PROVIDER=openai 且 OPENAI_API_KEY=sk-xxx")
+        print("     - 使用通义千问嵌入：EMBEDDING_PROVIDER=qianwen 且 DASHSCOPE_API_KEY=sk-xxx")
+        print("     （若 LLM 使用 DeepSeek，仍需单独配置上述任一嵌入用 Key。）")
+        return False
     processor = DocProcessor()
     try:
         chunks = processor.process_document(

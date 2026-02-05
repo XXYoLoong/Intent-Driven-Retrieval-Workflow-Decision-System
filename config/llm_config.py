@@ -28,13 +28,14 @@ ENV_ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
 ENV_DASHSCOPE_API_KEY = "DASHSCOPE_API_KEY"  # 通义千问 / Qianwen
 ENV_DASHSCOPE_BASE_URL = "DASHSCOPE_BASE_URL"
 
-# 模型默认值
+# 模型默认值（Qianwen 可选 qwen3-omni-flash，多模态/语音需流式，本系统内部已做聚合）
 DEFAULT_MODELS = {
     "openai": "gpt-4-turbo-preview",
     "deepseek": "deepseek-chat",
     "claude": "claude-3-5-sonnet-20241022",
     "qianwen": "qwen-plus",
 }
+# Qianwen 可选模型：qwen-plus / qwen-turbo / qwen-max / qwen3-omni-flash（多模态，仅支持流式，内部已适配）
 
 # 各提供商 Base URL（当 .env 未指定时使用）
 DEFAULT_BASE_URLS = {
@@ -104,14 +105,12 @@ def get_llm_model(provider: Optional[str] = None, role: str = "chat") -> str:
 
 
 def get_embedding_provider() -> str:
-    """嵌入模型提供商：openai | deepseek | qianwen，优先 .env 中 EMBEDDING_PROVIDER。"""
+    """嵌入模型提供商：openai | qianwen。DeepSeek 官方 API 暂无 embeddings 端点，需单独配置嵌入。"""
     p = (os.getenv("EMBEDDING_PROVIDER") or "").strip().lower()
-    if p in ("openai", "deepseek", "qianwen"):
+    if p in ("openai", "qianwen"):
         return p
     if os.getenv(ENV_DASHSCOPE_API_KEY):
         return "qianwen"
-    if os.getenv(ENV_DEEPSEEK_API_KEY) or (os.getenv(ENV_LLM_PROVIDER) or "").strip().lower() == "deepseek":
-        return "deepseek"
     return "openai"
 
 
@@ -122,10 +121,6 @@ def get_embedding_api_key_and_base() -> Tuple[str, str]:
         key = os.getenv(ENV_DASHSCOPE_API_KEY) or ""
         base = os.getenv(ENV_DASHSCOPE_BASE_URL) or "https://dashscope.aliyuncs.com/compatible-mode/v1"
         return key, base
-    if provider == "deepseek":
-        key = os.getenv(ENV_DEEPSEEK_API_KEY) or ""
-        base = DEFAULT_BASE_URLS["deepseek"]
-        return key, base
     key = os.getenv(ENV_OPENAI_API_KEY) or ""
     base = os.getenv(ENV_OPENAI_BASE_URL) or DEFAULT_BASE_URLS["openai"]
     return key, base
@@ -135,7 +130,6 @@ def get_embedding_model() -> str:
     """嵌入模型名。可通过 EMBEDDING_MODEL 覆盖。"""
     default = {
         "openai": "text-embedding-3-small",
-        "deepseek": "deepseek-embedding",
         "qianwen": "text-embedding-v3",
     }.get(get_embedding_provider(), "text-embedding-3-small")
     return os.getenv("EMBEDDING_MODEL") or default
