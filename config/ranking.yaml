@@ -1,0 +1,61 @@
+# ============================================================================
+# 检索打分与融合配置
+# ============================================================================
+
+# 各 target 的权重配置
+weights:
+  semantic: 0.5      # 语义相似度权重
+  keyword: 0.3       # 关键词匹配权重
+  freshness: 0.15    # 新鲜度权重
+  policy: 0.05       # 策略权重（权限、成本等）
+
+# Freshness 阈值
+freshness:
+  required_threshold: 0.7    # 必须满足的新鲜度阈值
+  penalty_threshold: 0.5     # 开始惩罚的阈值
+  expired_penalty: -1.0      # 过期直接剔除（或设为0）
+
+# RESULT 优先策略
+result_priority:
+  enabled: true
+  conditions:
+    - freshness_ok: true
+    - total_score: ">= 0.7"
+  boost: 0.2                 # 满足条件时额外加分
+
+# WORKFLOW 输入缺失惩罚
+workflow_penalties:
+  missing_required_input: -0.5    # 缺少必需输入
+  missing_optional_input: -0.1   # 缺少可选输入
+  risk_too_high: -1.0             # 风险过高直接剔除
+  cost_exceeded: -0.3             # 成本超限
+
+# 剔除规则
+filtering:
+  deprecated: true           # 剔除 deprecated 资源
+  disabled: true             # 剔除 disabled 资源
+  expired_result: true       # 剔除过期 RESULT（当 freshness_required=true）
+  risk_blocked: true         # 剔除被策略阻止的高风险资源
+
+# 各 target 特定配置
+target_configs:
+  DOC:
+    semantic_weight: 0.6
+    keyword_weight: 0.4
+    freshness_weight: 0.0    # DOC 不考虑新鲜度
+  
+  WORKFLOW:
+    semantic_weight: 0.4
+    keyword_weight: 0.3
+    metadata_weight: 0.3     # 元数据匹配（capabilities, tags）
+  
+  RESULT:
+    semantic_weight: 0.3
+    keyword_weight: 0.2
+    freshness_weight: 0.4
+    subject_match_weight: 0.1  # subject_keys 匹配
+  
+  STRUCTURED:
+    semantic_weight: 0.2
+    keyword_weight: 0.5
+    structured_match_weight: 0.3  # 结构化查询匹配度

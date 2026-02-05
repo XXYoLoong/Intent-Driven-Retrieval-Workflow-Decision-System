@@ -1,0 +1,42 @@
+# ============================================================================
+# 策略配置：权限、成本、风险控制
+# ============================================================================
+
+# 每类用户/租户允许的 workflow/tool 列表
+permissions:
+  default_tenant:
+    allowed_workflows: ["*"]      # 允许所有（生产环境应限制）
+    allowed_tools: ["*"]
+    blocked_workflows: []
+    blocked_tools: []
+  
+  # 示例：限制特定租户
+  tenant_example:
+    allowed_workflows: ["wf_order_status", "wf_user_info"]
+    allowed_tools: ["tool_sql_query", "tool_api_call"]
+    blocked_workflows: ["wf_admin_*"]
+    blocked_tools: []
+
+# 成本上限（每轮）
+cost_limits:
+  default:
+    max_tokens: 10000
+    max_latency_ms: 5000
+    max_usd: 0.01
+  
+  # 按租户覆盖
+  tenant_overrides: {}
+
+# 风险等级限制
+risk_limits:
+  default:
+    max_risk_level: "mid"         # low, mid, high
+    block_high_risk: true
+  
+  tenant_overrides: {}
+
+# 执行策略
+execution:
+  max_retries: 3
+  timeout_seconds: 30
+  idempotency_window_seconds: 300  # 5分钟内相同请求去重

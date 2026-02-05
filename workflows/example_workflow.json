@@ -1,0 +1,53 @@
+{
+  "workflow_id": "wf_example_v1",
+  "version": "1.0.0",
+  "steps": [
+    {
+      "type": "TOOL",
+      "tool_id": "tool_example",
+      "args_template": {
+        "param1": "value1"
+      }
+    },
+    {
+      "type": "CONDITION",
+      "condition": {
+        "if": "step_0.result.status == 'success'",
+        "then": "continue"
+      }
+    },
+    {
+      "type": "TRANSFORM",
+      "fn": "normalize_result",
+      "input": "step_0.result"
+    }
+  ],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "input_param": {
+        "type": "string"
+      }
+    },
+    "required": ["input_param"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "result": {
+        "type": "string"
+      }
+    }
+  },
+  "retry_policy": {
+    "max_retries": 3,
+    "backoff": "exponential"
+  },
+  "timeout_seconds": 30,
+  "side_effects": ["database_write"],
+  "permissions": {
+    "tenant_id": "*",
+    "roles": ["user", "admin"]
+  },
+  "ttl_seconds": 3600
+}

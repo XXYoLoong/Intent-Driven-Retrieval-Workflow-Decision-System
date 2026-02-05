@@ -1,0 +1,191 @@
+# ============================================================================
+# Intent-Driven Retrieval & Workflow Decision System
+# 核心常量定义（8个关键决策）
+# ============================================================================
+
+# 1. Intent Enum 最终列表
+intents:
+  - KNOWLEDGE_QA          # 知识问答（偏 DOC）
+  - LOOKUP_STATUS         # 查状态（偏 STRUCTURED/RESULT）
+  - EXECUTE_TASK          # 需要执行动作流程（偏 WORKFLOW/TOOL）
+  - DECISION_RECOMMEND    # 给方案建议（偏 DOC + 推理）
+  - TROUBLESHOOT          # 排障（偏 DOC + WORKFLOW）
+  - ACCOUNT_USER_SPECIFIC # 强用户态（必须 user_id）
+  - OTHER                 # 其他
+
+# 2. 库（数据源）定义
+data_sources:
+  DOC:
+    - name: "knowledge_base"
+      description: "预制知识库（Markdown/HTML/JSON）"
+      storage: "s3"
+      indexing: ["vector", "keyword"]
+    
+    - name: "documentation"
+      description: "产品文档、API文档"
+      storage: "s3"
+      indexing: ["vector", "keyword"]
+  
+  WORKFLOW:
+    - name: "workflow_registry"
+      description: "工作流注册表"
+      storage: "postgres"
+      indexing: ["keyword", "metadata"]
+  
+  RESULT:
+    - name: "execution_cache"
+      description: "历史执行结果缓存"
+      storage: "postgres"
+      indexing: ["keyword", "structured"]
+      freshness_required: true
+  
+  STRUCTURED:
+    - name: "postgres_db"
+      description: "PostgreSQL 结构化数据"
+      storage: "postgres"
+      indexing: ["sql", "keyword"]
+    
+    - name: "elasticsearch"
+      description: "Elasticsearch 全文检索"
+      storage: "elasticsearch"
+      indexing: ["fulltext", "keyword"]
+
+# 3. Structured Data 技术选型
+structured_data:
+  primary: "postgres"        # 主数据库（Registry + Results）
+  search_engine: "elasticsearch"  # 全文检索增强
+  graph_db: null            # 暂不使用图数据库（未来可扩展）
+  
+  postgres:
+    use_for:
+      - resource_registry
+      - workflow_definitions
+      - execution_results
+      - metadata_indexing
+  
+  elasticsearch:
+    use_for:
+      - fulltext_search
+      - complex_queries
+      - aggregations
+
+# 4. Workflow 编排格式
+workflow_format:
+  type: "json"              # JSON Steps（可版本化、可序列化）
+  schema_version: "1.0"
+  
+  structure:
+    - workflow_id: "string"
+    - version: "semver"
+    - steps: "array"
+    - input_schema: "json_schema"
+    - output_schema: "json_schema"
+    - retry_policy: "object"
+    - timeout: "seconds"
+    - side_effects: "array"
+    - permissions: "object"
+  
+  step_types:
+    - TOOL          # 单步工具调用
+    - CONDITION     # 条件分支
+    - TRANSFORM     # 数据变换
+    - RETRIEVE      # 二次检索
+    - PARALLEL      # 并行执行
+
+# 5. Citations（引用）策略
+citations:
+  required: true            # 必须引用来源
+  format: "markdown"        # Markdown 链接格式
+  
+  format_examples:
+    doc: "[来源: 知识库 > 产品文档](doc://res_doc_123#chunk_5)"
+    result: "[来源: 执行结果 run_20260123_abc](result://res_result_456)"
+    workflow: "[基于工作流: 订单状态查询 v1.2](workflow://wf_order_status_v1)"
+  
+  display:
+    inline: true            # 行内引用
+    footnote: false         # 不使用脚注
+    metadata_include: true  # 包含元数据（版本、时间等）
+
+# 6. RESULT TTL 策略
+result_ttl:
+  strategy: "workflow_based_with_default"  # 按 workflow 配置，全局默认 fallback
+  
+  default_ttl_seconds: 3600        # 默认 1 小时
+  max_ttl_seconds: 86400           # 最大 24 小时
+  min_ttl_seconds: 60              # 最小 1 分钟
+  
+  workflow_override: true          # 允许 workflow 覆盖
+  priority_rules:
+    - if: "workflow.ttl_seconds exists"
+      then: "use workflow.ttl_seconds"
+    - elif: "resource.freshness.ttl_seconds exists"
+      then: "use resource.freshness.ttl_seconds"
+    - else: "use default_ttl_seconds"
+  
+  freshness_check:
+    strict: true                   # 严格检查 freshness
+    grace_period_seconds: 300      # 过期后 5 分钟宽限期
+
+# 7. 多租户隔离模型
+multi_tenant:
+  enabled: true
+  isolation_level: "tenant_id"     # 租户级隔离
+  
+  fields:
+    tenant_id: "required"          # 必须字段
+    user_id: "optional"            # 可选（用户级隔离）
+    team_id: "optional"            # 可选（团队级隔离）
+  
+  isolation_rules:
+    RESULT:
+      - filter_by: ["tenant_id", "user_id"]
+      - enforce: "strict"          # 严格隔离
+    
+    WORKFLOW:
+      - filter_by: ["tenant_id"]
+      - enforce: "strict"
+    
+    DOC:
+      - filter_by: ["tenant_id"]
+      - enforce: "soft"            # 软隔离（可共享）
+  
+  default_tenant: null             # 不允许默认租户（必须显式指定）
+
+# 8. 输出形态默认策略
+output_format:
+  default: "steps"                 # 默认步骤化（更稳、更易理解）
+  
+  options:
+    - text: "纯文本（自然语言）"
+      use_case: "一般问答"
+      citation_style: "inline"
+    
+    - steps: "步骤化（结构化说明）"
+      use_case: "默认（推荐）"
+      citation_style: "inline"
+      structure:
+        - summary: "一句话总结"
+        - steps: ["步骤1", "步骤2", ...]
+        - evidence: ["引用1", "引用2", ...]
+    
+    - json: "JSON（结构化数据）"
+      use_case: "需要结果数据时选择"
+      citation_style: "metadata"
+      structure:
+        - answer: "string"
+        - data: "object"
+        - citations: "array"
+    
+    - table: "表格（结构化展示）"
+      use_case: "列表、对比类查询"
+      citation_style: "inline"
+  
+  selection_rules:
+    - if: "user.options.output_format specified"
+      then: "use user specified"
+    - elif: "intent == LOOKUP_STATUS"
+      then: "prefer json or table"
+    - elif: "intent == EXECUTE_TASK"
+      then: "prefer steps"
+    - else: "use default (steps)"
