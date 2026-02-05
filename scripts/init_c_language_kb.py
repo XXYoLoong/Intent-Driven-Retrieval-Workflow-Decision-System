@@ -24,7 +24,8 @@ sys.path.insert(0, str(project_root))
 
 from services.resource_registry.service import ResourceService, WorkflowService
 from services.resource_registry.doc_processor import DocProcessor
-from services.resource_registry.database import init_db
+from services.resource_registry.database import init_db, get_db_context
+from services.resource_registry.models import WorkflowDef
 
 
 def init_c_language_knowledge_base():
@@ -235,6 +236,6 @@ if __name__ == "__main__":
         sys.exit(1)
     
     # 初始化知识库
-    success = init_c_language_kb()
+    success = init_c_language_knowledge_base()
     if not success:
         sys.exit(1)
