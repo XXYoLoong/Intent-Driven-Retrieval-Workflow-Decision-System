@@ -42,13 +42,15 @@ class DocRetriever:
         context: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """检索文档"""
-        # 1. 向量检索
+        # 1. 向量检索（保证可迭代，避免 'bool' object is not iterable）
         query_embedding = self.embedding_service.embed_text(query)
         vector_candidates = self.vector_store.search_doc_chunks(
             query_embedding=query_embedding,
             top_k=top_k * 2,  # 多取一些用于融合
             filters=filters
         )
+        if not isinstance(vector_candidates, list):
+            vector_candidates = []
 
         # 2. 关键词检索（简化版：在 snippet 中搜索）
         keyword_candidates = self._keyword_search(query, vector_candidates)
@@ -61,8 +63,8 @@ class DocRetriever:
             top_k
         )
 
-        # 4. 转换为统一格式
-        return self._format_candidates(candidates, filters)
+        # 4. 转换为统一格式（传入 context 以使用 resource_cache，减少 N+1）
+        return self._format_candidates(candidates, filters, context)
 
     def _keyword_search(
         self,
@@ -70,6 +72,8 @@ class DocRetriever:
         candidates: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """关键词搜索（简化版）"""
+        if not isinstance(candidates, list):
+            candidates = []
         query_terms = set(re.findall(r'\w+', query.lower()))
         scored = []
         
@@ -97,6 +101,10 @@ class DocRetriever:
         top_k: int
     ) -> List[Dict[str, Any]]:
         """融合向量和关键词分数"""
+        if not isinstance(vector_candidates, list):
+            vector_candidates = []
+        if not isinstance(keyword_candidates, list):
+            keyword_candidates = []
         # 创建候选字典（按 chunk_id）
         candidate_dict = {}
         
@@ -131,30 +139,39 @@ class DocRetriever:
     def _format_candidates(
         self,
         candidates: List[Dict[str, Any]],
-        filters: Optional[Dict[str, Any]]
+        filters: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """格式化为统一候选格式"""
         formatted = []
+        if not isinstance(candidates, list):
+            candidates = []
+        cache = (context or {}).get("resource_cache")
         
         for cand in candidates:
-            # 获取资源信息
+            # 获取资源信息（优先使用请求内缓存）
             resource_id = cand.get("resource_id")
             resource = None
             if resource_id:
-                resource = ResourceService.get_resource(resource_id)
+                if cache is not None:
+                    if resource_id not in cache:
+                        cache[resource_id] = ResourceService.get_resource(resource_id)
+                    resource = cache[resource_id]
+                else:
+                    resource = ResourceService.get_resource(resource_id)
             
             if not resource:
                 continue
             
-            # 检查状态过滤
+            # 检查状态过滤（resource 为字典）
             if filters and "resource_status" in filters:
-                if resource.status not in filters["resource_status"]:
+                if resource.get("status") not in filters["resource_status"]:
                     continue
             
             formatted.append({
                 "resource_id": resource_id,
                 "resource_type": "DOC",
-                "title": resource.title,
+                "title": resource.get("title", ""),
                 "snippet": cand.get("snippet", ""),
                 "scores": {
                     "semantic": cand.get("semantic_score", 0.0),
@@ -164,9 +181,9 @@ class DocRetriever:
                     "total": cand.get("total_score", 0.0)
                 },
                 "metadata": {
-                    "tags": resource.tags,
-                    "version": resource.version,
-                    "updated_at": resource.updated_at.isoformat() if resource.updated_at else None,
+                    "tags": resource.get("tags", []),
+                    "version": resource.get("version", ""),
+                    "updated_at": resource.get("updated_at"),
                     "chunk_id": cand.get("chunk_id"),
                 }
             })

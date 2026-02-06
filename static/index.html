@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>服务测试 · Intent-Driven System</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --primary: #0d9488;
+      --primary-hover: #0f766e;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --left-width: 300px;
+      --radius: 10px;
+      --shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+    }
+    /* 左侧：服务列表与说明 */
+    .sidebar {
+      width: var(--left-width);
+      min-width: var(--left-width);
+      background: var(--card);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-header {
+      padding: 1.25rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 1rem;
+      color: var(--primary);
+    }
+    .service-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: .5rem 0;
+    }
+    .service-item {
+      display: block;
+      width: 100%;
+      padding: .75rem 1rem;
+      border: none;
+      background: none;
+      text-align: left;
+      cursor: pointer;
+      font-size: .9rem;
+      color: var(--text);
+      border-left: 3px solid transparent;
+      transition: background .15s, border-color .15s;
+    }
+    .service-item:hover { background: var(--bg); }
+    .service-item.active {
+      background: rgba(13, 148, 136, .08);
+      border-left-color: var(--primary);
+      font-weight: 500;
+    }
+    .intro {
+      padding: 1rem;
+      font-size: .85rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      border-top: 1px solid var(--border);
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .intro h4 { margin: 0 0 .5rem; font-size: .9rem; color: var(--text); }
+    /* 右侧：白板测试区 */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      padding: 1.5rem;
+    }
+    .panel-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--text);
+    }
+    .panel-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    .form-group label {
+      display: block;
+      font-size: .85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: .35rem;
+    }
+    .form-group input, .form-group textarea, .form-group select {
+      width: 100%;
+      padding: .5rem .75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: .9rem;
+      font-family: inherit;
+    }
+    .form-group textarea { min-height: 80px; resize: vertical; }
+    .form-group input:focus, .form-group textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(13, 148, 136, .15);
+    }
+    .btn {
+      padding: .5rem 1.25rem;
+      border: none;
+      border-radius: 6px;
+      font-size: .9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+    .response-box {
+      margin-top: 1rem;
+      flex: 1;
+      min-height: 160px;
+      padding: 1rem;
+      background: #f1f5f9;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      font-family: "Consolas", "Monaco", monospace;
+      font-size: .8rem;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .response-box.empty { color: var(--text-muted); }
+    .response-box.error { background: #fef2f2; color: #b91c1c; }
+    .response-box.success { background: #f0fdf4; }
+    .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .row .form-group { flex: 1; min-width: 140px; }
+    .checkbox-label { display: flex; align-items: center; gap: .5rem; cursor: pointer; font-weight: normal; }
+    .checkbox-label input { width: auto; }
+    .hidden { display: none !important; }
+    .badge {
+      display: inline-block;
+      padding: .2rem .5rem;
+      border-radius: 4px;
+      font-size: .75rem;
+      background: var(--border);
+      color: var(--text-muted);
+      margin-left: .5rem;
+    }
+    .badge.get { background: #dcfce7; color: #166534; }
+    .badge.post { background: #dbeafe; color: #1e40af; }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-header">服务测试</div>
+    <nav class="service-list" id="serviceList"></nav>
+    <div class="intro" id="intro"></div>
+  </aside>
+  <main class="main">
+    <h1 class="panel-title" id="panelTitle">选择左侧服务开始测试</h1>
+    <div class="panel-card">
+      <div id="panelContent"></div>
+      <div class="response-box empty" id="responseBox">响应将显示在这里</div>
+    </div>
+  </main>
+
+  <script>
+    const API_BASE = '';
+    const services = [
+      {
+        id: 'health',
+        name: '健康检查',
+        badge: 'GET',
+        intro: '<h4>GET /v1/health</h4>检查服务是否正常运行，无需参数，直接点击「检查」即可。',
+        panel: 'health'
+      },
+      {
+        id: 'chat',
+        name: '对话（同步）',
+        badge: 'POST',
+        intro: '<h4>POST /v1/chat</h4>发送一条消息，获取完整回复。可填写 tenant_id、勾选「显示路由信息」查看路由与决策元信息。',
+        panel: 'chat'
+      },
+      {
+        id: 'chat_stream',
+        name: '对话（流式）',
+        badge: 'POST',
+        intro: '<h4>POST /v1/chat/stream</h4>以 SSE 流式返回回答，适合长回答或需要逐字展示的场景。',
+        panel: 'chat_stream'
+      },
+      {
+        id: 'workflow_run',
+        name: '工作流执行',
+        badge: 'POST',
+        intro: '<h4>POST /v1/workflows/{workflow_id}/run</h4>执行指定工作流，如 C 语言检索工作流 wf_c_language_search_v1。inputs 为 JSON，如 {"query": "如何修改数组？"}。',
+        panel: 'workflow_run'
+      },
+      {
+        id: 'workflow_run_status',
+        name: '工作流运行查询',
+        badge: 'GET',
+        intro: '<h4>GET /v1/workflows/runs/{run_id}</h4>根据执行后返回的 run_id 查询该次运行的状态与输出。',
+        panel: 'workflow_run_status'
+      },
+      {
+        id: 'resources_list',
+        name: '资源列表',
+        badge: 'GET',
+        intro: '<h4>GET /v1/resources</h4>按类型、状态、租户等筛选并列出资源，支持分页。',
+        panel: 'resources_list'
+      },
+      {
+        id: 'resource_get',
+        name: '资源详情',
+        badge: 'GET',
+        intro: '<h4>GET /v1/resources/{resource_id}</h4>根据资源 ID 获取单条资源详情，如 res_doc_c_language。',
+        panel: 'resource_get'
+      },
+      {
+        id: 'traces',
+        name: '追踪查询',
+        badge: 'GET',
+        intro: '<h4>GET /v1/traces/{trace_id}</h4>根据 trace_id 查询一次请求的追踪信息（当前为占位实现）。',
+        panel: 'traces'
+      },
+      {
+        id: 'replay',
+        name: '回放',
+        badge: 'POST',
+        intro: '<h4>POST /v1/replay</h4>按 trace_id 以只读或执行模式重放请求（当前为占位实现）。',
+        panel: 'replay'
+      }
+    ];
+
+    let currentService = null;
+
+    function renderServiceList() {
+      const el = document.getElementById('serviceList');
+      el.innerHTML = services.map(s => `
+        <button type="button" class="service-item" data-id="${s.id}">
+          ${s.name}<span class="badge ${s.badge.toLowerCase()}">${s.badge}</span>
+        </button>
+      `).join('');
+      el.querySelectorAll('.service-item').forEach(btn => {
+        btn.addEventListener('click', () => selectService(btn.dataset.id));
+      });
+    }
+
+    function selectService(id) {
+      currentService = services.find(s => s.id === id);
+      if (!currentService) return;
+      document.querySelectorAll('.service-item').forEach(b => b.classList.remove('active'));
+      document.querySelector(`.service-item[data-id="${id}"]`)?.classList.add('active');
+      document.getElementById('panelTitle').textContent = currentService.name;
+      document.getElementById('intro').innerHTML = currentService.intro;
+      renderPanel(currentService.panel);
+      document.getElementById('responseBox').textContent = '响应将显示在这里';
+      document.getElementById('responseBox').className = 'response-box empty';
+    }
+
+    function renderPanel(panelId) {
+      const container = document.getElementById('panelContent');
+      const responseBox = document.getElementById('responseBox');
+      container.innerHTML = '';
+
+      const setResponse = (text, isError = false) => {
+        responseBox.textContent = text;
+        responseBox.className = 'response-box ' + (isError ? 'error' : 'success');
+      };
+      const setLoading = (loading) => {
+        container.querySelectorAll('.btn-primary').forEach(b => { b.disabled = loading; });
+      };
+
+      switch (panelId) {
+        case 'health': {
+          container.innerHTML = '<button type="button" class="btn btn-primary" id="btnHealth">检查</button>';
+          container.querySelector('#btnHealth').onclick = async () => {
+            setLoading(true);
+            try {
+              const r = await fetch(API_BASE + '/v1/health');
+              const data = await r.json().catch(() => ({}));
+              setResponse(JSON.stringify(data, null, 2), !r.ok);
+            } catch (e) { setResponse('请求失败: ' + e.message, true); }
+            setLoading(false);
+          };
+          break;
+        }
+        case 'chat': {
+          container.innerHTML = `
+            <div class="form-group">
+              <label>消息 *</label>
+              <textarea id="chatMessage" placeholder="例如：如何修改 C 语言中的数组元素？">如何修改 C 语言中的数组元素？</textarea>
+            </div>
+            <div class="row">
+              <div class="form-group">
+                <label>tenant_id</label>
+                <input type="text" id="chatTenant" value="default" placeholder="default" />
+              </div>
+              <div class="form-group">
+                <label class="checkbox-label"><input type="checkbox" id="chatShowRouting" /> 显示路由信息</label>
+              </div>
+            </div>
+            <button type="button" class="btn btn-primary" id="btnChat">发送</button>
+          `;
+          container.querySelector('#btnChat').onclick = async () => {
+            setLoading(true);
+            try {
+              const body = {
+                message: document.getElementById('chatMessage').value.trim(),
+                context: { tenant_id: document.getElementById('chatTenant').value || 'default' },
+                options: { show_routing: document.getElementById('chatShowRouting').checked }
+              };
+              const r = await fetch(API_BASE + '/v1/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+              });
+              const data = await r.json().catch(() => ({}));
+              setResponse(JSON.stringify(data, null, 2), !r.ok);
+            } catch (e) { setResponse('请求失败: ' + e.message, true); }
+            setLoading(false);
+          };
+          break;
+        }
+        case 'chat_stream': {
+          container.innerHTML = `
+            <div class="form-group">
+              <label>消息 *</label>
+              <textarea id="streamMessage" placeholder="输入问题">如何修改 C 语言中的数组元素？</textarea>
+            </div>
+            <div class="form-group">
+              <label>tenant_id</label>
+              <input type="text" id="streamTenant" value="default" />
+            </div>
+            <button type="button" class="btn btn-primary" id="btnStream">流式发送</button>
+          `;
+          container.querySelector('#btnStream').onclick = async () => {
+            setLoading(true);
+            responseBox.textContent = '（流式输出中…）\n';
+            responseBox.className = 'response-box success';
+            try {
+              const body = {
+                message: document.getElementById('streamMessage').value.trim(),
+                context: { tenant_id: document.getElementById('streamTenant').value || 'default' }
+              };
+              const r = await fetch(API_BASE + '/v1/chat/stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+              });
+              if (!r.ok) { setResponse('HTTP ' + r.status + ': ' + await r.text(), true); setLoading(false); return; }
+              const reader = r.body.getReader();
+              const decoder = new TextDecoder();
+              let full = '';
+              while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                full += decoder.decode(value, { stream: true });
+                const lines = full.split('\n');
+                full = lines.pop() || '';
+                for (const line of lines) {
+                  if (line.startsWith('data: ')) {
+                    try {
+                      const json = JSON.parse(line.slice(6));
+                      if (json.delta) responseBox.textContent += json.delta;
+                      if (json.answer) responseBox.textContent += '\n\n[完整答案]\n' + json.answer;
+                      if (json.error) responseBox.textContent += '\n[错误] ' + json.error;
+                    } catch (_) {}
+                  }
+                }
+                responseBox.scrollTop = responseBox.scrollHeight;
+              }
+              if (full && full.startsWith('data: ')) {
+                try {
+                  const json = JSON.parse(full.slice(6));
+                  if (json.answer) responseBox.textContent += '\n\n[完整] ' + json.answer;
+                } catch (_) {}
+              }
+              responseBox.className = 'response-box success';
+            } catch (e) { setResponse('请求失败: ' + e.message, true); }
+            setLoading(false);
+          };
+          break;
+        }
+        case 'workflow_run': {
+          container.innerHTML = `
+            <div class="form-group">
+              <label>workflow_id *</label>
+              <input type="text" id="wfId" value="wf_c_language_search_v1" placeholder="wf_c_language_search_v1" />
+            </div>
+            <div class="form-group">
+              <label>inputs (JSON) *</label>
+              <textarea id="wfInputs">{"query": "如何修改 C 语言中的数组元素？"}</textarea>
+            </div>
+            <div class="row">
+              <div class="form-group"><label>tenant_id</label><input type="text" id="wfTenant" value="default" /></div>
+              <div class="form-group"><label>user_id</label><input type="text" id="wfUserId" placeholder="可选" /></div>
+            </div>
+            <button type="button" class="btn btn-primary" id="btnWfRun">执行</button>
+          `;
+          container.querySelector('#btnWfRun').onclick = async () => {
+            setLoading(true);
+            try {
+              let inputs;
+              try { inputs = JSON.parse(document.getElementById('wfInputs').value); } catch (e) {
+                setResponse('inputs 不是合法 JSON: ' + e.message, true); setLoading(false); return;
+              }
+              const workflowId = document.getElementById('wfId').value.trim();
+              const tenantId = document.getElementById('wfTenant').value || undefined;
+              const userId = document.getElementById('wfUserId').value || undefined;
+              const url = `${API_BASE}/v1/workflows/${encodeURIComponent(workflowId)}/run${tenantId ? '?tenant_id=' + encodeURIComponent(tenantId) : ''}${userId ? (tenantId ? '&' : '?') + 'user_id=' + encodeURIComponent(userId) : ''}`;
+              const r = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ inputs })
+              });
+              const data = await r.json().catch(() => ({}));
+              setResponse(JSON.stringify(data, null, 2), !r.ok);
+            } catch (e) { setResponse('请求失败: ' + e.message, true); }
+            setLoading(false);
+          };
+          break;
+        }
+        case 'workflow_run_status': {
+          container.innerHTML = `
+            <div class="form-group">
+              <label>run_id *</label>
+              <input type="text" id="runId" placeholder="执行工作流后返回的 run_id" />
+            </div>
+            <div class="form-group">
+              <label>tenant_id</label>
+              <input type="text" id="runTenant" value="default" />
+            </div>
+            <button type="button" class="btn btn-primary" id="btnRunStatus">查询</button>
+          `;
+          container.querySelector('#btnRunStatus').onclick = async () => {
+            setLoading(true);
+            try {
+              const runId = document.getElementById('runId').value.trim();
+              const tenantId = document.getElementById('runTenant').value || undefined;
+              const url = `${API_BASE}/v1/workflows/runs/${encodeURIComponent(runId)}${tenantId ? '?tenant_id=' + encodeURIComponent(tenantId) : ''}`;
+              const r = await fetch(url);
+              const data = await r.json().catch(() => ({}));
+              setResponse(JSON.stringify(data, null, 2), !r.ok);
+            } catch (e) { setResponse('请求失败: ' + e.message, true); }
+            setLoading(false);
+          };
+          break;
+        }
+        case 'resources_list': {
+          container.innerHTML = `
+            <div class="row">
+              <div class="form-group"><label>type</label><input type="text" id="resType" placeholder="DOC / WORKFLOW" /></div>
+              <div class="form-group"><label>status</label><input type="text" id="resStatus" placeholder="active" /></div>
+              <div class="form-group"><label>tenant_id</label><input type="text" id="resTenant" value="default" /></div>
+              <div class="form-group"><label>limit</label><input type="number" id="resLimit" value="20" /></div>
+            </div>
+            <button type="button" class="btn btn-primary" id="btnResList">查询列表</button>
+          `;
+          container.querySelector('#btnResList').onclick = async () => {
+            setLoading(true);
+            try {
+              const params = new URLSearchParams();
+              const type = document.getElementById('resType').value.trim();
+              const status = document.getElementById('resStatus').value.trim();
+              const tenant = document.getElementById('resTenant').value.trim();
+              const limit = document.getElementById('resLimit').value;
+              if (type) params.set('type', type);
+              if (status) params.set('status', status);
+              if (tenant) params.set('tenant_id', tenant);
+              if (limit) params.set('limit', limit);
+              const r = await fetch(API_BASE + '/v1/resources?' + params.toString());
+              const data = await r.json().catch(() => ({}));
+              setResponse(JSON.stringify(data, null, 2), !r.ok);
+            } catch (e) { setResponse('请求失败: ' + e.message, true); }
+            setLoading(false);
+          };
+          break;
+        }
+        case 'resource_get': {
+          container.innerHTML = `
+            <div class="form-group">
+              <label>resource_id *</label>
+              <input type="text" id="resId" value="res_doc_c_language" placeholder="res_doc_c_language" />
+            </div>
+            <div class="form-group">
+              <label>tenant_id</label>
+              <input type="text" id="resGetTenant" value="default" />
+            </div>
+            <button type="button" class="btn btn-primary" id="btnResGet">获取详情</button>
+          `;
+          container.querySelector('#btnResGet').onclick = async () => {
+            setLoading(true);
+            try {
+              const id = document.getElementById('resId').value.trim();
+              const tenant = document.getElementById('resGetTenant').value || undefined;
+              const url = `${API_BASE}/v1/resources/${encodeURIComponent(id)}${tenant ? '?tenant_id=' + encodeURIComponent(tenant) : ''}`;
+              const r = await fetch(url);
+              const data = await r.json().catch(() => ({}));
+              setResponse(JSON.stringify(data, null, 2), !r.ok);
+            } catch (e) { setResponse('请求失败: ' + e.message, true); }
+            setLoading(false);
+          };
+          break;
+        }
+        case 'traces': {
+          container.innerHTML = `
+            <div class="form-group">
+              <label>trace_id *</label>
+              <input type="text" id="traceId" placeholder="追踪 ID" />
+            </div>
+            <button type="button" class="btn btn-primary" id="btnTrace">查询追踪</button>
+          `;
+          container.querySelector('#btnTrace').onclick = async () => {
+            setLoading(true);
+            try {
+              const id = document.getElementById('traceId').value.trim();
+              const r = await fetch(API_BASE + '/v1/traces/' + encodeURIComponent(id));
+              const data = await r.json().catch(() => ({}));
+              setResponse(JSON.stringify(data, null, 2), !r.ok);
+            } catch (e) { setResponse('请求失败: ' + e.message, true); }
+            setLoading(false);
+          };
+          break;
+        }
+        case 'replay': {
+          container.innerHTML = `
+            <div class="form-group">
+              <label>trace_id *</label>
+              <input type="text" id="replayTraceId" placeholder="追踪 ID" />
+            </div>
+            <div class="form-group">
+              <label>mode</label>
+              <select id="replayMode"><option value="readonly">readonly</option><option value="execute">execute</option></select>
+            </div>
+            <button type="button" class="btn btn-primary" id="btnReplay">回放</button>
+          `;
+          container.querySelector('#btnReplay').onclick = async () => {
+            setLoading(true);
+            try {
+              const traceId = document.getElementById('replayTraceId').value.trim();
+              const mode = document.getElementById('replayMode').value;
+              const r = await fetch(API_BASE + '/v1/replay?trace_id=' + encodeURIComponent(traceId) + '&mode=' + encodeURIComponent(mode), { method: 'POST' });
+              const data = await r.json().catch(() => ({}));
+              setResponse(JSON.stringify(data, null, 2), !r.ok);
+            } catch (e) { setResponse('请求失败: ' + e.message, true); }
+            setLoading(false);
+          };
+          break;
+        }
+        default:
+          container.innerHTML = '<p class="text-muted">该服务暂无测试面板</p>';
+      }
+    }
+
+    renderServiceList();
+    selectService('health');
+  </script>
+</body>
+</html>

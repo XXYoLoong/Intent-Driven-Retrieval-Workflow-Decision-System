@@ -259,8 +259,12 @@ class _ChatCompletionsAdapter:
 
 
 class _ChatAdapter:
+    """兼容 OpenAI 的 client.chat.completions.create(...) 调用路径"""
     def __init__(self, unified_client: UnifiedLLMClient):
-        self.completions = _ChatCompletionsAdapter(unified_client)
+        completions = _ChatCompletionsAdapter(unified_client)
+        self.completions = completions
+        # OpenAI SDK 使用 client.chat.completions.create，故需暴露 chat.completions
+        self.chat = type("ChatNamespace", (), {"completions": completions})()
 
 
 def get_openai_compatible_client(

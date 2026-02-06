@@ -94,15 +94,19 @@ class VectorStore:
                 # ChromaDB 不支持数组包含查询，需要预处理
                 pass
         
-        results = self.doc_chunks_collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            where=where if where else None
-        )
+        try:
+            results = self.doc_chunks_collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where=where if where else None
+            )
+        except Exception:
+            return []
         
         candidates = []
-        if results["ids"] and len(results["ids"][0]) > 0:
-            for i, doc_id in enumerate(results["ids"][0]):
+        ids = results.get("ids") if isinstance(results, dict) else None
+        if ids and isinstance(ids, list) and len(ids) > 0 and isinstance(ids[0], list) and len(ids[0]) > 0:
+            for i, doc_id in enumerate(ids[0]):
                 candidates.append({
                     "chunk_id": doc_id,
                     "resource_id": results["metadatas"][0][i].get("resource_id"),
@@ -160,15 +164,19 @@ class VectorStore:
                 # 简化处理
                 pass
         
-        results = self.resource_briefs_collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            where=where if where else None
-        )
+        try:
+            results = self.resource_briefs_collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where=where if where else None
+            )
+        except Exception:
+            return []
         
         candidates = []
-        if results["ids"] and len(results["ids"][0]) > 0:
-            for i, resource_id in enumerate(results["ids"][0]):
+        ids = results.get("ids") if isinstance(results, dict) else None
+        if ids and isinstance(ids, list) and len(ids) > 0 and isinstance(ids[0], list) and len(ids[0]) > 0:
+            for i, resource_id in enumerate(ids[0]):
                 candidates.append({
                     "resource_id": resource_id,
                     "type": results["metadatas"][0][i].get("type"),

@@ -15,13 +15,23 @@
 """
 Chat API 服务
 """
+from pathlib import Path
+
+# 启动时加载 .env，确保 LLM/嵌入等配置可用（与 init 脚本一致）
+from dotenv import load_dotenv
+_project_root = Path(__file__).resolve().parents[2]
+load_dotenv(_project_root / ".env")
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 import json
 import asyncio
+import logging
 from services.orchestrator.orchestrator import Orchestrator
 from services.chat_api.workflow_api import router as workflow_router
 from services.chat_api.replay import router as replay_router
@@ -34,6 +44,17 @@ app.include_router(workflow_router)
 app.include_router(replay_router)
 app.include_router(resource_router)
 
+# 静态资源与测试界面（项目根目录下的 static）
+_static_dir = Path(__file__).resolve().parents[2] / "static"
+if _static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+
+@app.get("/ui")
+async def ui_redirect():
+    """服务测试界面：左栏介绍、右栏白板式测试各 API"""
+    return RedirectResponse("/static/index.html")
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -45,6 +66,26 @@ app.add_middleware(
 
 # 初始化编排器
 orchestrator = Orchestrator()
+
+
+@app.get("/")
+async def root():
+    """根路径：服务说明与常用链接"""
+    return {
+        "service": "Intent-Driven Retrieval & Workflow Decision System",
+        "ui": "/ui",
+        "docs": "/docs",
+        "health": "/v1/health",
+        "chat": "/v1/chat",
+        "chat_stream": "/v1/chat/stream",
+    }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """避免浏览器默认请求 favicon 时返回 404"""
+    from fastapi.responses import Response
+    return Response(status_code=204)
 
 
 # Pydantic 模型
@@ -88,7 +129,7 @@ async def chat(request: ChatRequest):
         # 根据 options 决定返回内容
         if request.options.get("show_routing", False):
             return ChatResponse(
-                session_id=result.get("session_id", ""),
+                session_id=result.get("session_id") or "",
                 answer=result.get("answer", ""),
                 meta={
                     **result.get("meta", {}),
@@ -99,13 +140,14 @@ async def chat(request: ChatRequest):
             )
         else:
             return ChatResponse(
-                session_id=result.get("session_id", ""),
+                session_id=result.get("session_id") or "",
                 answer=result.get("answer", ""),
                 meta=result.get("meta", {})
             )
     
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.getLogger(__name__).exception("chat failed")
+        raise HTTPException(status_code=500, detail="处理时发生错误，请稍后重试。")
 
 
 @app.post("/v1/chat/stream")
@@ -136,8 +178,10 @@ async def chat_stream(request: ChatRequest):
             yield f"event: decision\n"
             yield f"data: {json.dumps({'action_type': result.get('meta', {}).get('action_type')})}\n\n"
             
-            # 流式输出答案（简化版：分块发送）
-            answer = result.get("answer", "")
+            # 流式输出答案（简化版：分块发送）；保证 answer 为字符串
+            answer = result.get("answer") if result else ""
+            if not isinstance(answer, str):
+                answer = str(answer) if answer is not None else ""
             chunk_size = 50
             for i in range(0, len(answer), chunk_size):
                 chunk = answer[i:i+chunk_size]
@@ -150,8 +194,9 @@ async def chat_stream(request: ChatRequest):
             yield f"data: {json.dumps({'answer': answer, 'meta': result.get('meta', {})})}\n\n"
         
         except Exception as e:
+            logging.getLogger(__name__).exception("chat_stream failed")
             yield f"event: error\n"
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield f"data: {json.dumps({'error': '处理时发生错误，请稍后重试。'})}\n\n"
     
     return StreamingResponse(
         generate(),

@@ -17,11 +17,11 @@
 """
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+import copy
 import hashlib
 import json
 import uuid
 from services.resource_registry.service import WorkflowService, WorkflowRunService, ResultService, ResourceService
-from services.resource_registry.models import WorkflowRun
 from config.constants import ResourceType
 
 
@@ -29,7 +29,16 @@ class WorkflowEngine:
     """工作流执行引擎"""
 
     def __init__(self):
-        pass
+        self._doc_retriever = None
+
+    def _get_doc_retriever(self):
+        """懒加载文档检索器（供 RETRIEVE 步骤使用）"""
+        if self._doc_retriever is None:
+            from services.retrieval.vector_store import VectorStore
+            from services.retrieval.embedding import EmbeddingService
+            from services.retrieval.doc_retriever import DocRetriever
+            self._doc_retriever = DocRetriever(VectorStore(), EmbeddingService())
+        return self._doc_retriever
 
     def execute(
         self,
@@ -54,34 +63,34 @@ class WorkflowEngine:
                 workflow_id, inputs, tenant_id, user_id
             )
         
-        # 4. 检查幂等性
+        # 4. 检查幂等性（get_run 返回字典）
         existing_run = self._check_idempotency(idempotency_key, tenant_id)
-        if existing_run and existing_run.status == "success":
+        if existing_run and existing_run.get("status") == "success":
             return {
-                "run_id": existing_run.run_id,
+                "run_id": existing_run["run_id"],
                 "workflow_id": workflow_id,
                 "status": "success",
-                "outputs": existing_run.outputs,
+                "outputs": existing_run.get("outputs"),
                 "from_cache": True
             }
         
-        # 5. 创建执行记录
+        # 5. 创建执行记录（workflow_def 为字典）
         run_data = {
             "run_id": run_id,
             "workflow_id": workflow_id,
-            "resource_id": workflow_def.resource_id,
+            "resource_id": workflow_def.get("resource_id"),
             "status": "running",
             "inputs": inputs,
             "idempotency_key": idempotency_key
         }
-        run = WorkflowRunService.create_run(run_data, tenant_id, user_id)
+        WorkflowRunService.create_run(run_data, tenant_id, user_id)
         
         # 6. 执行工作流步骤
         try:
             outputs, errors = self._execute_steps(
-                workflow_def.workflow_json,
+                workflow_def.get("workflow_json", {}),
                 inputs,
-                workflow_def.timeout_seconds or 30
+                workflow_def.get("timeout_seconds") or 30
             )
             
             # 7. 更新执行记录
@@ -208,15 +217,42 @@ class WorkflowEngine:
         return {"result": True}
 
     def _execute_transform(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        """执行变换步骤"""
+        """执行变换步骤（深拷贝 outputs 避免循环引用导致 DB 写入报错）"""
         fn = step.get("fn")
         # TODO: 实现数据变换
-        return {"result": context.get("outputs", {})}
+        return {"result": copy.deepcopy(context.get("outputs", {}))}
 
     def _execute_retrieve(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        """执行检索步骤"""
-        # TODO: 调用检索器
-        return {"result": []}
+        """执行检索步骤：根据 query_template 从 inputs 取 query，调用 DOC 检索"""
+        target = (step.get("target") or "DOC").upper()
+        query_tpl = step.get("query_template") or "{{query}}"
+        inputs = context.get("inputs") or {}
+        # 简单替换 {{query}} 等
+        query = query_tpl.replace("{{query}}", inputs.get("query", "")).strip() or inputs.get("query", "")
+        filters = step.get("filters") or {}
+        top_k = step.get("top_k", 5)
+        if not query:
+            return {"result": []}
+        if target != "DOC":
+            # 仅实现 DOC 检索；WORKFLOW/RESULT 可后续扩展
+            return {"result": []}
+        try:
+            retriever = self._get_doc_retriever()
+            candidates = retriever.retrieve(query=query, filters=filters, top_k=top_k, context=None)
+            if not isinstance(candidates, list):
+                candidates = []
+            # 返回统一格式供后续 TRANSFORM 使用：snippet, title, resource_id
+            result = [
+                {
+                    "snippet": c.get("snippet", ""),
+                    "title": c.get("title", ""),
+                    "resource_id": c.get("resource_id", ""),
+                }
+                for c in candidates
+            ]
+            return {"result": result}
+        except Exception:
+            return {"result": []}
 
     def _execute_parallel(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """执行并行步骤"""
@@ -249,26 +285,26 @@ class WorkflowEngine:
         self,
         idempotency_key: str,
         tenant_id: Optional[str]
-    ) -> Optional[WorkflowRun]:
-        """检查幂等性"""
-        # TODO: 从数据库查询
+    ) -> Optional[Dict[str, Any]]:
+        """检查幂等性（返回 get_run 的字典或 None）"""
+        # TODO: 按 idempotency_key 从数据库查询 run
         return None
 
     def _create_result(
         self,
-        workflow_def,
+        workflow_def: Dict[str, Any],
         run_id: str,
         inputs: Dict[str, Any],
         outputs: Dict[str, Any],
         tenant_id: Optional[str],
         user_id: Optional[str]
     ) -> None:
-        """创建 RESULT 资源"""
+        """创建 RESULT 资源（workflow_def 为字典）"""
         # 计算 inputs_hash
         inputs_hash = ResultService.compute_inputs_hash(inputs)
         
         # 计算 TTL
-        ttl_seconds = workflow_def.ttl_seconds
+        ttl_seconds = workflow_def.get("ttl_seconds")
         if not ttl_seconds:
             from config.constants import RESULT_TTL
             ttl_seconds = RESULT_TTL["default_ttl_seconds"]
@@ -277,7 +313,7 @@ class WorkflowEngine:
         fresh_until = datetime.utcnow() + timedelta(seconds=ttl_seconds)
         
         # 生成 summary（简化）
-        summary = f"工作流 {workflow_def.workflow_id} 执行结果"
+        summary = f"工作流 {workflow_def.get('workflow_id', '')} 执行结果"
         
         # 创建 RESULT 资源
         result_id = f"res_result_{run_id}"
@@ -285,7 +321,7 @@ class WorkflowEngine:
             "result_id": result_id,
             "resource_id": result_id,  # RESULT 资源ID
             "derived_from": {
-                "resource_id": workflow_def.resource_id,
+                "resource_id": workflow_def.get("resource_id"),
                 "run_id": run_id,
                 "inputs_hash": inputs_hash
             },
@@ -300,9 +336,7 @@ class WorkflowEngine:
             "payload": outputs
         }
         
-        ResultService.create_result(result_data, tenant_id, user_id)
-        
-        # 同时创建对应的 Resource 记录
+        # 先创建 Resource 记录（results.resource_id 外键引用 resources.id）
         resource_data = {
             "id": result_id,
             "type": ResourceType.RESULT,
@@ -316,3 +350,4 @@ class WorkflowEngine:
             }
         }
         ResourceService.create_resource(resource_data, tenant_id)
+        ResultService.create_result(result_data, tenant_id, user_id)

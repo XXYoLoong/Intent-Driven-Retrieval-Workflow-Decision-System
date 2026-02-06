@@ -59,7 +59,9 @@ class Decider:
         policy: Optional[Dict[str, Any]] = None,
         available_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """决策"""
+        """决策（保证 candidates 可迭代，避免 'bool' object is not iterable）"""
+        if not isinstance(candidates, list):
+            candidates = []
         # 先应用硬规则
         hard_rule_result = self._apply_hard_rules(candidates, plan)
         if hard_rule_result:

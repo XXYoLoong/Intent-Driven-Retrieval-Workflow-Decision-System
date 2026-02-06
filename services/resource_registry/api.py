@@ -95,7 +95,7 @@ async def create_resource(
             resource.dict(),
             tenant_id=tenant_id
         )
-        return created.to_dict()
+        return created
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -110,7 +110,7 @@ async def get_resource(
     resource = ResourceService.get_resource(resource_id, tenant_id)
     if not resource:
         raise HTTPException(status_code=404, detail="Resource not found")
-    return resource.to_dict()
+    return resource
 
 
 @router.get("", response_model=List[ResourceResponse])
@@ -132,7 +132,7 @@ async def list_resources(
         limit=limit,
         offset=offset
     )
-    return [r.to_dict() for r in resources]
+    return resources
 
 
 @router.put("/{resource_id}", response_model=ResourceResponse)
@@ -147,7 +147,7 @@ async def update_resource(
     resource = ResourceService.update_resource(resource_id, update_dict, tenant_id)
     if not resource:
         raise HTTPException(status_code=404, detail="Resource not found")
-    return resource.to_dict()
+    return resource
 
 
 @router.delete("/{resource_id}", status_code=204)

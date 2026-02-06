@@ -43,7 +43,7 @@ class WorkflowRetriever:
         """检索工作流"""
         tenant_id = context.get("tenant_id") if context else None
 
-        # 1. 向量检索资源摘要
+        # 1. 向量检索资源摘要（保证可迭代，避免 'bool' object is not iterable）
         query_embedding = self.embedding_service.embed_text(query)
         vector_candidates = self.vector_store.search_resource_briefs(
             query_embedding=query_embedding,
@@ -51,9 +51,11 @@ class WorkflowRetriever:
             top_k=top_k * 2,
             filters=filters
         )
+        if not isinstance(vector_candidates, list):
+            vector_candidates = []
 
-        # 2. 关键词匹配（在 capabilities, tags, title 中）
-        keyword_candidates = self._keyword_match(query, vector_candidates)
+        # 2. 关键词匹配（在 capabilities, tags, title 中）；传入 context 以使用 resource_cache
+        keyword_candidates = self._keyword_match(query, vector_candidates, context)
 
         # 3. 融合打分
         candidates = self._merge_and_score(
@@ -68,26 +70,35 @@ class WorkflowRetriever:
     def _keyword_match(
         self,
         query: str,
-        candidates: List[Dict[str, Any]]
+        candidates: List[Dict[str, Any]],
+        context: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """关键词匹配"""
+        if not isinstance(candidates, list):
+            candidates = []
         query_lower = query.lower()
         query_terms = set(query_lower.split())
         
         scored = []
+        cache = (context or {}).get("resource_cache")
         for cand in candidates:
             resource_id = cand.get("resource_id")
             if not resource_id:
                 continue
             
-            resource = ResourceService.get_resource(resource_id)
+            if cache is not None:
+                if resource_id not in cache:
+                    cache[resource_id] = ResourceService.get_resource(resource_id)
+                resource = cache[resource_id]
+            else:
+                resource = ResourceService.get_resource(resource_id)
             if not resource:
                 continue
             
-            # 匹配 capabilities, tags, title
-            title_match = query_lower in resource.title.lower()
-            capabilities_text = " ".join(resource.capabilities).lower()
-            tags_text = " ".join(resource.tags).lower()
+            # 匹配 capabilities, tags, title（resource 为字典）
+            title_match = query_lower in (resource.get("title") or "").lower()
+            capabilities_text = " ".join(resource.get("capabilities") or []).lower()
+            tags_text = " ".join(resource.get("tags") or []).lower()
             
             capabilities_match = any(term in capabilities_text for term in query_terms)
             tags_match = any(term in tags_text for term in query_terms)
@@ -115,6 +126,10 @@ class WorkflowRetriever:
         top_k: int
     ) -> List[Dict[str, Any]]:
         """融合分数"""
+        if not isinstance(vector_candidates, list):
+            vector_candidates = []
+        if not isinstance(keyword_candidates, list):
+            keyword_candidates = []
         candidate_dict = {}
         
         for cand in vector_candidates:
@@ -152,30 +167,30 @@ class WorkflowRetriever:
     ) -> List[Dict[str, Any]]:
         """格式化候选"""
         formatted = []
+        if not isinstance(candidates, list):
+            candidates = []
         
         for cand in candidates:
             resource = cand.get("resource")
             if not resource:
                 continue
             
-            # 检查租户隔离
-            if tenant_id and resource.tenant_id and resource.tenant_id != tenant_id:
+            # 检查租户隔离与状态（resource 为字典）
+            if tenant_id and resource.get("tenant_id") and resource.get("tenant_id") != tenant_id:
                 continue
             
-            # 检查状态
             if filters and "resource_status" in filters:
-                if resource.status not in filters["resource_status"]:
+                if resource.get("status") not in filters["resource_status"]:
                     continue
             
-            # 检查是否 deprecated/disabled
-            if resource.status in ["deprecated", "disabled"]:
+            if resource.get("status") in ["deprecated", "disabled"]:
                 continue
             
             formatted.append({
-                "resource_id": resource.id,
+                "resource_id": resource.get("id", ""),
                 "resource_type": "WORKFLOW",
-                "title": resource.title,
-                "snippet": f"{resource.title}. {resource.when_to_use or ''}",
+                "title": resource.get("title", ""),
+                "snippet": f"{resource.get('title', '')}. {resource.get('when_to_use') or ''}",
                 "scores": {
                     "semantic": cand.get("semantic_score", 0.0),
                     "keyword": cand.get("keyword_score", 0.0),
@@ -184,10 +199,10 @@ class WorkflowRetriever:
                     "total": cand.get("total_score", 0.0)
                 },
                 "metadata": {
-                    "tags": resource.tags,
-                    "version": resource.version,
-                    "capabilities": resource.capabilities,
-                    "updated_at": resource.updated_at.isoformat() if resource.updated_at else None,
+                    "tags": resource.get("tags", []),
+                    "version": resource.get("version", ""),
+                    "capabilities": resource.get("capabilities", []),
+                    "updated_at": resource.get("updated_at"),
                 }
             })
         

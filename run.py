@@ -16,12 +16,12 @@
 启动脚本
 """
 import uvicorn
-from services.chat_api.main import app
 
 if __name__ == "__main__":
+    # reload 需使用 import 字符串，否则 uvicorn 会警告且 reload 不生效
     uvicorn.run(
-        app,
+        "services.chat_api.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=True,
     )

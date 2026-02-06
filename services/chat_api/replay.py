@@ -37,7 +37,7 @@ async def get_trace(trace_id: str):
 @router.post("/replay")
 async def replay(
     trace_id: str,
-    mode: str = Query("readonly", regex="^(readonly|execute)$")
+    mode: str = Query("readonly", pattern="^(readonly|execute)$")
 ):
     """重放追踪（只读或执行模式）"""
     # TODO: 实现回放逻辑

@@ -131,6 +131,24 @@ class WorkflowDef(Base):
         Index("idx_workflow_id", "workflow_id", "resource_id"),
     )
 
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典（避免脱离 Session 后访问报错）"""
+        return {
+            "id": self.id,
+            "resource_id": self.resource_id,
+            "workflow_id": self.workflow_id,
+            "workflow_json": self.workflow_json,
+            "input_schema": self.input_schema,
+            "output_schema": self.output_schema,
+            "ttl_seconds": self.ttl_seconds,
+            "retry_policy": self.retry_policy,
+            "timeout_seconds": self.timeout_seconds,
+            "side_effects": self.side_effects,
+            "permissions": self.permissions,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
 
 class Result(Base):
     """执行结果表（RESULT类型资源）"""
@@ -157,6 +175,22 @@ class Result(Base):
         Index("idx_result_inputs_hash", "inputs_hash", "tenant_id"),
     )
 
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "result_id": self.result_id,
+            "resource_id": self.resource_id,
+            "derived_from": self.derived_from,
+            "subject_keys": self.subject_keys,
+            "inputs_hash": self.inputs_hash,
+            "fresh_until": self.fresh_until.isoformat() if self.fresh_until else None,
+            "summary": self.summary,
+            "payload": self.payload,
+            "tenant_id": self.tenant_id,
+            "user_id": self.user_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
 
 class WorkflowRun(Base):
     """工作流执行记录"""
@@ -182,3 +216,22 @@ class WorkflowRun(Base):
         Index("idx_run_workflow_tenant", "workflow_id", "tenant_id", "started_at"),
         Index("idx_run_idempotency", "idempotency_key", "tenant_id"),
     )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "run_id": self.run_id,
+            "workflow_id": self.workflow_id,
+            "resource_id": self.resource_id,
+            "status": self.status,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "ended_at": self.ended_at.isoformat() if self.ended_at else None,
+            "inputs": self.inputs,
+            "outputs": self.outputs,
+            "artifacts": self.artifacts,
+            "errors": self.errors,
+            "idempotency_key": self.idempotency_key,
+            "tenant_id": self.tenant_id,
+            "user_id": self.user_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }

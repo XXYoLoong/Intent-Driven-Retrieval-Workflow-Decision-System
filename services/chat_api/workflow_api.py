@@ -57,19 +57,10 @@ async def get_run(
     run_id: str,
     tenant_id: Optional[str] = Query(None)
 ):
-    """获取执行记录"""
+    """获取执行记录（get_run 返回字典）；若带 tenant_id 未查到则再按 run_id 查一次"""
     run = WorkflowRunService.get_run(run_id, tenant_id)
+    if not run and tenant_id:
+        run = WorkflowRunService.get_run(run_id, None)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    
-    return {
-        "run_id": run.run_id,
-        "workflow_id": run.workflow_id,
-        "status": run.status,
-        "started_at": run.started_at.isoformat() if run.started_at else None,
-        "ended_at": run.ended_at.isoformat() if run.ended_at else None,
-        "inputs": run.inputs,
-        "outputs": run.outputs,
-        "artifacts": run.artifacts,
-        "errors": run.errors
-    }
+    return run

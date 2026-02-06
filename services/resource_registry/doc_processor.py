@@ -176,15 +176,15 @@ class DocProcessor:
         return chunks
 
     def reindex_resource(self, resource_id: str) -> bool:
-        """重新索引资源"""
+        """重新索引资源（get_resource 返回字典）"""
         resource = ResourceService.get_resource(resource_id)
         if not resource:
             return False
         
-        if resource.type != "DOC":
+        if resource.get("type") != "DOC":
             return False
         
-        pointers = resource.pointers or {}
+        pointers = resource.get("pointers") or {}
         doc_uri = pointers.get("doc_uri")
         
         if not doc_uri:

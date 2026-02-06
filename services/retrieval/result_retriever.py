@@ -48,7 +48,7 @@ class ResultRetriever:
         
         freshness_required = filters.get("freshness_required", False) if filters else False
 
-        # 1. 向量检索（基于 summary）
+        # 1. 向量检索（基于 summary）；保证可迭代，避免 'bool' object is not iterable
         query_embedding = self.embedding_service.embed_text(query)
         vector_candidates = self.vector_store.search_resource_briefs(
             query_embedding=query_embedding,
@@ -56,6 +56,8 @@ class ResultRetriever:
             top_k=top_k * 2,
             filters=filters
         )
+        if not isinstance(vector_candidates, list):
+            vector_candidates = []
 
         # 2. 从数据库获取完整结果信息
         db_results = []
@@ -68,31 +70,38 @@ class ResultRetriever:
             if not result:
                 continue
             
-            # 检查新鲜度
-            if freshness_required:
-                if result.fresh_until < datetime.utcnow():
-                    continue  # 过期，跳过
+            # 检查新鲜度（result 为字典，fresh_until 为 ISO 字符串）
+            fresh_until_str = result.get("fresh_until")
+            if freshness_required and fresh_until_str:
+                try:
+                    from datetime import datetime as dt
+                    fresh_until = dt.fromisoformat(fresh_until_str.replace("Z", "+00:00"))
+                    if hasattr(fresh_until, "tzinfo") and fresh_until.tzinfo:
+                        fresh_until = fresh_until.replace(tzinfo=None)
+                    if fresh_until < datetime.utcnow():
+                        continue  # 过期，跳过
+                except Exception:
+                    pass
             
             db_results.append({
                 **cand,
                 "result": result,
-                "freshness_score": self._compute_freshness_score(result.fresh_until)
+                "freshness_score": self._compute_freshness_score(fresh_until_str)
             })
 
-        # 3. 匹配 inputs_hash 和 subject_keys
+        # 3. 匹配 inputs_hash 和 subject_keys（result 为字典）
         if context:
             inputs = context.get("inputs")
             if inputs:
                 inputs_hash = ResultService.compute_inputs_hash(inputs)
-                # 优先匹配相同 inputs_hash
                 for r in db_results:
-                    if r["result"].inputs_hash == inputs_hash:
+                    if r["result"].get("inputs_hash") == inputs_hash:
                         r["inputs_match"] = True
                         r["subject_match_score"] = 1.0
                     else:
                         r["inputs_match"] = False
                         r["subject_match_score"] = self._match_subject_keys(
-                            r["result"].subject_keys,
+                            r["result"].get("subject_keys"),
                             context
                         )
 
@@ -100,17 +109,25 @@ class ResultRetriever:
         candidates = self._merge_and_score(db_results, top_k)
 
         # 5. 格式化
-        return self._format_candidates(candidates, filters)
+        return self._format_candidates(candidates, filters, context)
 
-    def _compute_freshness_score(self, fresh_until: datetime) -> float:
-        """计算新鲜度分数"""
+    def _compute_freshness_score(self, fresh_until: Any = None) -> float:
+        """计算新鲜度分数（fresh_until 可为 datetime 或 ISO 字符串）"""
         now = datetime.utcnow()
+        if not fresh_until:
+            return 0.0
+        if isinstance(fresh_until, str):
+            try:
+                from datetime import datetime as dt
+                t = dt.fromisoformat(fresh_until.replace("Z", "+00:00"))
+                if t.tzinfo:
+                    t = t.replace(tzinfo=None)
+                fresh_until = t
+            except Exception:
+                return 0.0
         if fresh_until < now:
             return 0.0  # 已过期
-        
-        # 计算剩余时间比例
         ttl_seconds = (fresh_until - now).total_seconds()
-        # 假设最大 TTL 为 24 小时
         max_ttl = 86400
         return min(ttl_seconds / max_ttl, 1.0)
 
@@ -160,6 +177,8 @@ class ResultRetriever:
         top_k: int
     ) -> List[Dict[str, Any]]:
         """融合分数"""
+        if not isinstance(candidates, list):
+            candidates = []
         scored = []
         
         for cand in candidates:
@@ -185,25 +204,37 @@ class ResultRetriever:
     def _format_candidates(
         self,
         candidates: List[Dict[str, Any]],
-        filters: Optional[Dict[str, Any]]
+        filters: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """格式化候选"""
         formatted = []
+        if not isinstance(candidates, list):
+            candidates = []
+        cache = (context or {}).get("resource_cache")
         
         for cand in candidates:
             result = cand.get("result")
             if not result:
                 continue
             
-            resource = ResourceService.get_resource(result.resource_id)
+            rid = result.get("resource_id")
+            resource = None
+            if rid:
+                if cache is not None:
+                    if rid not in cache:
+                        cache[rid] = ResourceService.get_resource(rid)
+                    resource = cache[rid]
+                else:
+                    resource = ResourceService.get_resource(rid)
             if not resource:
                 continue
             
             formatted.append({
-                "resource_id": result.result_id,
+                "resource_id": result.get("result_id", ""),
                 "resource_type": "RESULT",
-                "title": resource.title,
-                "snippet": result.summary,
+                "title": resource.get("title", ""),
+                "snippet": result.get("summary", ""),
                 "scores": {
                     "semantic": cand.get("score", 0.0),
                     "keyword": 0.0,
@@ -212,11 +243,11 @@ class ResultRetriever:
                     "total": cand.get("total_score", 0.0)
                 },
                 "metadata": {
-                    "tags": resource.tags,
-                    "version": resource.version,
-                    "fresh_until": result.fresh_until.isoformat(),
-                    "derived_from": result.derived_from,
-                    "subject_keys": result.subject_keys,
+                    "tags": resource.get("tags", []),
+                    "version": resource.get("version", ""),
+                    "fresh_until": result.get("fresh_until"),
+                    "derived_from": result.get("derived_from"),
+                    "subject_keys": result.get("subject_keys"),
                 }
             })
         

@@ -59,7 +59,9 @@ class Answerer:
         output_constraints: Dict[str, Any]
     ) -> str:
         """生成最终回答"""
-        # 1. 防护：清理 evidence（防止 prompt injection）
+        # 1. 防护：保证 evidence 可迭代，再清理（防止 'bool' object is not iterable）
+        if not isinstance(evidence, list):
+            evidence = []
         safe_evidence = self._sanitize_evidence(evidence)
         
         # 2. 构建 prompt
@@ -149,8 +151,8 @@ class Answerer:
 
     def _ensure_citations(self, answer: str, evidence: List[Dict[str, Any]]) -> str:
         """确保回答包含引用"""
-        # 检查是否已有引用
-        has_citations = any(
+        # 检查是否已有引用（表达式已是 bool，不要用 any()）
+        has_citations = (
             "doc://" in answer or "result://" in answer or "workflow://" in answer
         )
         

@@ -32,8 +32,8 @@ class ResourceService:
     def create_resource(
         resource_data: Dict[str, Any],
         tenant_id: Optional[str] = None
-    ) -> Resource:
-        """创建资源"""
+    ) -> Dict[str, Any]:
+        """创建资源，返回字典避免脱离 Session 后访问报错"""
         with get_db_context() as db:
             resource = Resource(
                 id=resource_data["id"],
@@ -55,16 +55,17 @@ class ResourceService:
             )
             db.add(resource)
             db.flush()
-            return resource
+            return resource.to_dict()
 
     @staticmethod
-    def get_resource(resource_id: str, tenant_id: Optional[str] = None) -> Optional[Resource]:
-        """获取资源"""
+    def get_resource(resource_id: str, tenant_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """获取资源，返回字典避免脱离 Session 后访问报错"""
         with get_db_context() as db:
             query = db.query(Resource).filter(Resource.id == resource_id)
             if tenant_id:
                 query = query.filter(Resource.tenant_id == tenant_id)
-            return query.first()
+            resource = query.first()
+            return resource.to_dict() if resource else None
 
     @staticmethod
     def list_resources(
@@ -74,8 +75,8 @@ class ResourceService:
         tags: Optional[List[str]] = None,
         limit: int = 100,
         offset: int = 0
-    ) -> List[Resource]:
-        """列出资源"""
+    ) -> List[Dict[str, Any]]:
+        """列出资源，返回字典列表"""
         with get_db_context() as db:
             query = db.query(Resource)
             
@@ -86,19 +87,19 @@ class ResourceService:
             if tenant_id:
                 query = query.filter(Resource.tenant_id == tenant_id)
             if tags:
-                # JSON 数组包含查询
                 for tag in tags:
                     query = query.filter(Resource.tags.contains([tag]))
             
-            return query.order_by(Resource.updated_at.desc()).limit(limit).offset(offset).all()
+            rows = query.order_by(Resource.updated_at.desc()).limit(limit).offset(offset).all()
+            return [r.to_dict() for r in rows]
 
     @staticmethod
     def update_resource(
         resource_id: str,
         updates: Dict[str, Any],
         tenant_id: Optional[str] = None
-    ) -> Optional[Resource]:
-        """更新资源"""
+    ) -> Optional[Dict[str, Any]]:
+        """更新资源，返回字典"""
         with get_db_context() as db:
             query = db.query(Resource).filter(Resource.id == resource_id)
             if tenant_id:
@@ -114,7 +115,7 @@ class ResourceService:
             
             resource.updated_at = datetime.utcnow()
             db.flush()
-            return resource
+            return resource.to_dict()
 
     @staticmethod
     def delete_resource(resource_id: str, tenant_id: Optional[str] = None) -> bool:
@@ -159,15 +160,26 @@ class WorkflowService:
             return workflow
 
     @staticmethod
-    def get_workflow(workflow_id: str, tenant_id: Optional[str] = None) -> Optional[WorkflowDef]:
-        """获取工作流定义"""
+    def get_workflow(workflow_id: str, tenant_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """按 workflow_id 获取工作流定义，返回字典"""
         with get_db_context() as db:
             query = db.query(WorkflowDef).join(Resource).filter(
                 WorkflowDef.workflow_id == workflow_id
             )
             if tenant_id:
                 query = query.filter(Resource.tenant_id == tenant_id)
-            return query.first()
+            w = query.first()
+            return w.to_dict() if w else None
+
+    @staticmethod
+    def get_workflow_by_resource_id(resource_id: str, tenant_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """按 resource_id 获取工作流定义，返回字典（供编排器根据执行资源查工作流）"""
+        with get_db_context() as db:
+            query = db.query(WorkflowDef).filter(WorkflowDef.resource_id == resource_id)
+            if tenant_id:
+                query = query.join(Resource, WorkflowDef.resource_id == Resource.id).filter(Resource.tenant_id == tenant_id)
+            w = query.first()
+            return w.to_dict() if w else None
 
 
 class ResultService:
@@ -202,15 +214,16 @@ class ResultService:
         result_id: str,
         tenant_id: Optional[str] = None,
         user_id: Optional[str] = None
-    ) -> Optional[Result]:
-        """获取结果"""
+    ) -> Optional[Dict[str, Any]]:
+        """获取结果，返回字典"""
         with get_db_context() as db:
             query = db.query(Result).filter(Result.result_id == result_id)
             if tenant_id:
                 query = query.filter(Result.tenant_id == tenant_id)
             if user_id:
                 query = query.filter(Result.user_id == user_id)
-            return query.first()
+            r = query.first()
+            return r.to_dict() if r else None
 
     @staticmethod
     def find_fresh_results(
@@ -276,13 +289,14 @@ class WorkflowRunService:
             return run
 
     @staticmethod
-    def get_run(run_id: str, tenant_id: Optional[str] = None) -> Optional[WorkflowRun]:
-        """获取执行记录"""
+    def get_run(run_id: str, tenant_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """获取执行记录，返回字典"""
         with get_db_context() as db:
             query = db.query(WorkflowRun).filter(WorkflowRun.run_id == run_id)
             if tenant_id:
                 query = query.filter(WorkflowRun.tenant_id == tenant_id)
-            return query.first()
+            run = query.first()
+            return run.to_dict() if run else None
 
     @staticmethod
     def update_run_status(
@@ -290,8 +304,31 @@ class WorkflowRunService:
         status: str,
         outputs: Optional[Dict[str, Any]] = None,
         errors: Optional[List[Dict[str, Any]]] = None
-    ) -> Optional[WorkflowRun]:
-        """更新执行状态"""
+    ) -> Optional[Dict[str, Any]]:
+        """更新执行状态；outputs 会做去循环引用处理再写入，避免 Circular reference detected"""
+        def _break_cycles(obj: Any, seen: Optional[set] = None) -> Any:
+            seen = seen or set()
+            oid = id(obj)
+            if oid in seen:
+                return None
+            if isinstance(obj, dict):
+                seen.add(oid)
+                try:
+                    return {k: _break_cycles(v, seen) for k, v in obj.items()}
+                finally:
+                    seen.discard(oid)
+            if isinstance(obj, list):
+                seen.add(oid)
+                try:
+                    return [_break_cycles(i, seen) for i in obj]
+                finally:
+                    seen.discard(oid)
+            if isinstance(obj, (str, int, float, bool)) or obj is None:
+                return obj
+            if hasattr(obj, "isoformat"):  # datetime
+                return obj.isoformat()
+            return str(obj)
+
         with get_db_context() as db:
             run = db.query(WorkflowRun).filter(WorkflowRun.run_id == run_id).first()
             if not run:
@@ -299,11 +336,11 @@ class WorkflowRunService:
             
             run.status = status
             if outputs is not None:
-                run.outputs = outputs
+                run.outputs = _break_cycles(outputs)
             if errors is not None:
-                run.errors = errors
+                run.errors = _break_cycles(errors) if isinstance(errors, list) else errors
             if status in ["success", "failed", "partial"]:
                 run.ended_at = datetime.utcnow()
             
             db.flush()
-            return run
+            return run.to_dict()

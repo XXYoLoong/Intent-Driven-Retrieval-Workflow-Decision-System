@@ -28,7 +28,10 @@ from services.executor.workflow_engine import WorkflowEngine
 from services.resource_registry.service import ResourceService, ResultService
 from config.constants import ResourceType, ActionType
 import uuid
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 class Orchestrator:
@@ -61,6 +64,11 @@ class Orchestrator:
         user_id = context.get("user_id") if context else None
         
         trace_id = f"trace_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        # 单请求内按 resource_id 缓存，减少 N+1 查询
+        resource_cache = {}
+        if context is None:
+            context = {}
+        context = {**context, "resource_cache": resource_cache}
         
         try:
             # 1. Router: 生成检索计划
@@ -70,9 +78,12 @@ class Orchestrator:
                 available_search_scopes=[ResourceType.DOC, ResourceType.WORKFLOW, ResourceType.RESULT, ResourceType.STRUCTURED]
             )
             
-            # 2. Retrieval: 执行多库检索
+            # 2. Retrieval: 执行多库检索（保证 search_plan 为可迭代列表，避免 bool 等导致 'X' object is not iterable）
             all_candidates = []
-            for search_item in plan.get("search_plan", []):
+            search_plan = plan.get("search_plan")
+            if not isinstance(search_plan, list):
+                search_plan = []
+            for search_item in search_plan:
                 target = search_item.get("target")
                 query = search_item.get("query", user_message)
                 filters = search_item.get("filters", {})
@@ -80,7 +91,8 @@ class Orchestrator:
                 
                 retrieval_context = {
                     "tenant_id": tenant_id,
-                    "user_id": user_id
+                    "user_id": user_id,
+                    "resource_cache": resource_cache,
                 }
                 
                 if target == ResourceType.DOC:
@@ -90,7 +102,8 @@ class Orchestrator:
                         top_k=top_k,
                         context=retrieval_context
                     )
-                    all_candidates.extend(candidates)
+                    if isinstance(candidates, list):
+                        all_candidates.extend(candidates)
                 
                 elif target == ResourceType.WORKFLOW:
                     candidates = self.workflow_retriever.retrieve(
@@ -99,7 +112,8 @@ class Orchestrator:
                         top_k=top_k,
                         context=retrieval_context
                     )
-                    all_candidates.extend(candidates)
+                    if isinstance(candidates, list):
+                        all_candidates.extend(candidates)
                 
                 elif target == ResourceType.RESULT:
                     candidates = self.result_retriever.retrieve(
@@ -108,7 +122,8 @@ class Orchestrator:
                         top_k=top_k,
                         context=retrieval_context
                     )
-                    all_candidates.extend(candidates)
+                    if isinstance(candidates, list):
+                        all_candidates.extend(candidates)
             
             # 3. Decider: 决策
             policy = {}  # TODO: 从配置加载
@@ -128,14 +143,14 @@ class Orchestrator:
                 exec_inputs = execution.get("input", {})
                 idempotency_key = execution.get("idempotency_key")
                 
-                # 获取 workflow_id
+                # 获取 workflow_id（resource / workflow_def 均为字典，避免脱离 Session 报错）
                 resource = ResourceService.get_resource(executor_resource_id, tenant_id)
                 if resource:
                     from services.resource_registry.service import WorkflowService
-                    workflow_def = WorkflowService.get_workflow(resource.id, tenant_id)
+                    workflow_def = WorkflowService.get_workflow_by_resource_id(resource["id"], tenant_id)
                     if workflow_def:
                         exec_result = self.workflow_engine.execute(
-                            workflow_id=workflow_def.workflow_id,
+                            workflow_id=workflow_def["workflow_id"],
                             inputs=exec_inputs,
                             tenant_id=tenant_id,
                             user_id=user_id,
@@ -162,9 +177,9 @@ class Orchestrator:
                 output_constraints=output_constraints
             )
             
-            # 7. 返回结果
+            # 7. 返回结果（session_id 保证为字符串，避免 ChatResponse 校验失败）
             return {
-                "session_id": session_id,
+                "session_id": session_id or "",
                 "trace_id": trace_id,
                 "answer": answer,
                 "meta": {
@@ -180,11 +195,12 @@ class Orchestrator:
             }
         
         except Exception as e:
-            # 错误处理
+            # 记录完整 traceback 便于排查；对用户只返回通用提示（不暴露内部错误）
+            logger.exception("orchestrator process failed")
             return {
-                "session_id": session_id,
+                "session_id": session_id or "",
                 "trace_id": trace_id,
-                "answer": f"抱歉，处理过程中出现错误：{str(e)}",
+                "answer": "处理时发生错误，请稍后重试。",
                 "meta": {
                     "intent": "OTHER",
                     "action_type": ActionType.FALLBACK,
@@ -203,7 +219,8 @@ class Orchestrator:
         evidence = []
         selected = action.get("selected", {})
         resource_id = selected.get("resource_id")
-        
+        if not isinstance(candidates, list):
+            candidates = []
         # 从 candidates 中找到选中的资源
         selected_candidate = None
         for cand in candidates:
@@ -238,10 +255,10 @@ class Orchestrator:
                     evidence.append({
                         "resource_id": resource_id,
                         "type": "RESULT",
-                        "content": str(result.payload),  # 简化：转为字符串
+                        "content": str(result.get("payload")),  # 简化：转为字符串
                         "citation": {
                             "source": f"result://{resource_id}",
-                            "id": result.result_id,
+                            "id": result.get("result_id", ""),
                             "span": None
                         }
                     })
@@ -277,6 +294,8 @@ class Orchestrator:
     def _extract_citations(self, evidence: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """提取引用"""
         citations = []
+        if not isinstance(evidence, list):
+            evidence = []
         for ev in evidence:
             citation = ev.get("citation", {})
             if citation.get("source"):

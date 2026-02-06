@@ -121,8 +121,9 @@ class IntentRouter:
         if "name" not in plan["intent"]:
             return False
         
-        # 验证 search_plan 非空
-        if not plan.get("search_plan"):
+        # 验证 search_plan 为非空列表（避免 LLM 返回 true 导致后续 'bool' object is not iterable）
+        search_plan = plan.get("search_plan")
+        if not isinstance(search_plan, list) or len(search_plan) == 0:
             return False
         
         return True
